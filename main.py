@@ -115,7 +115,7 @@ def interpretar_codigo(texto: str):
 # ==============================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 Hola, envíame la torre y apartamento.\n\n"
+        "👋 Hola, envíame la torre y apartamento o la placa del vehículo.\n\n"
         "Ejemplos válidos:\n"
         "• 1-101\n"
         "• 12-1001\n"
@@ -123,7 +123,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• 111202\n"
         "• t121001\n"
         "• 12 1001\n"
-        "• T12 1001"
+        "• T12 1001\n"
+        "• HQM137"
     )
 
 # ==============================
@@ -131,18 +132,50 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==============================
 async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto = update.message.text.strip()
+    texto_limpio_placa = texto.replace(" ", "").replace("-", "").upper()
+    
     torre_str, apto_str, digits = interpretar_codigo(texto)
 
     print(f"[LOG] Entrada: '{texto}' -> torre={torre_str}, apto={apto_str}, digits={digits}")
 
-    if not digits or len(digits) < 3:
+    # Ajuste: validamos que no tenga formato incorrecto, permitiendo longitud de placas (5 o 6 caracteres)
+    if (not digits or len(digits) < 2) and len(texto_limpio_placa) < 5:
         await update.message.reply_text(
-            "❌ Formato incorrecto.\nEjemplos: 1-101, 12-1001, 11103, 111202, t121001"
+            "❌ Formato incorrecto.\nEjemplos: 1-101, 12-1001, 11103, 111202, t121001, HQM137"
         )
         return
 
     datos = worksheet.get_all_records()
     print(f"[LOG] Registros cargados: {len(datos)}")
+
+    # ==============================
+    # NUEVO BLOQUE: Búsqueda por placa
+    # ==============================
+    if len(texto_limpio_placa) >= 5: # Si tiene 5 o más caracteres, buscamos si es placa
+        for fila in datos:
+            placa_c = str(buscar_columna(fila, ["placa", "carro"]) or "").replace(" ", "").replace("-", "").upper()
+            placa_m = str(buscar_columna(fila, ["placa", "moto"]) or "").replace(" ", "").replace("-", "").upper()
+
+            if (placa_c and texto_limpio_placa == placa_c) or (placa_m and texto_limpio_placa == placa_m):
+                estado_raw = str(fila.get("Estado", "")).strip().upper()
+                emoji, estado_txt = ESTADOS.get(estado_raw, ("⚪", "No especificado"))
+
+                saldo = buscar_columna(fila, ["saldo"]) or "N/A"
+                pc = buscar_columna(fila, ["placa", "carro"]) or "No registrado"
+                pm = buscar_columna(fila, ["placa", "moto"]) or "No registrada"
+
+                respuesta = (
+                    f"🏢 *Torre:* {fila.get('Torre')}\n"
+                    f"🏠 *Apartamento:* {fila.get('Apartamento')}\n"
+                    f"🧍‍♂️ *Propietario:* {fila.get('Propietario')}\n"
+                    f"💰 *Saldo:* {saldo}\n"
+                    f"{emoji} *Estado:* {estado_txt}\n"
+                    f"🚗 *Placa carro:* {pc}\n"
+                    f"🏍️ *Placa moto:* {pm}"
+                )
+                await update.message.reply_text(respuesta, parse_mode="Markdown")
+                return
+    # ==============================
 
     # Index para buscar rápido
     index_por_par = {}
@@ -161,7 +194,7 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if torre_str and apto_str:
         fila = index_por_par.get((torre_str, apto_str))
         if not fila:
-            await update.message.reply_text("❌ No encontré información para ese apartamento.")
+            await update.message.reply_text("❌ No encontré información para ese apartamento o placa.")
             return
 
         estado_raw = str(fila.get("Estado", "")).strip().upper()
@@ -197,7 +230,7 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 break
 
     if not fila:
-        await update.message.reply_text("❌ No encontré información para ese apartamento.")
+        await update.message.reply_text("❌ No encontré información para ese apartamento o placa.")
         return
 
     estado_raw = str(fila.get("Estado", "")).strip().upper()
@@ -232,4 +265,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
